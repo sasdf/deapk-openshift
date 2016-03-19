@@ -1,0 +1,453 @@
+<!doctype html>
+<html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <script src="/socket.io/socket.io.js"></script>
+        <script src="//cdnjs.cloudflare.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+        <link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-1q8mTJOASx8j1Au+a5WDVnPi2lkFfwwEAa8hDDdjZlpLegxhjVME1fgjWPGmkzs7" crossorigin="anonymous">
+        <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js" integrity="sha384-0mSbJDEHialfmuBBQP6A4Qrprq5OVfW37PRR3j5ELqxss1yVqOtnepnHVP9aJ7xS" crossorigin="anonymous"></script>
+        <link href="jquery.fileupload.css" rel="stylesheet">
+        <script src="jquery.ui.widget.js"></script>
+        <script src="jquery.iframe-transport.js"></script>
+        <script src="jquery.fileupload.js"></script>
+<script>
+var working = true;
+var socket;
+var processUpdate = function(res){
+    $('.processMsg').text(res).html($('.processMsg').html().replace(/\n/g,'<br/>'))
+    $('.processCon').fadeIn(500)
+}
+function itemClick($this){
+    $this.find('.name').fadeOut(300, function(){
+        $this.find('.confirm').fadeIn(300)
+    })
+}
+function cancel($this, e){
+    e.stopPropagation();
+    e.preventDefault();
+    var $confirm = $this.parents('.item').find('.confirm')
+    var $name = $this.parents('.item').find('.name')
+    $confirm.fadeOut(300, function(){
+        $name.fadeIn(300)
+    })
+    return false;
+}
+function compile($this, e){
+    cancel($this, e)
+    var $name = $this.parents('.item').find('.name')
+    $.post('/compile', "branch="+encodeURIComponent($name.text()), function(r){
+        if(r.error){
+            processUpdate(r.error);
+            $('.processClose').show();
+        }
+        $('.processCon').fadeIn(500)
+    },'json')
+    return false;
+}
+$(document).ready(function(){
+    $('.processClose').click(function(){
+        $('.processCon').fadeOut(500,function(){
+            $('.processClose').hide()
+        })
+    })
+    function appendItem(name){
+        return $('\
+            <div class="item" onclick="return itemClick($(this), event);" style="display: none;"><table class="vmtb"><tr><td class="vmtd">\
+                <div class="name">'+name+'</div>\
+                <div class="btn-group confirm" style="display: none;" role="group" aria-label="...">\
+                    <button type="button" onclick="return compile($(this), event);" class="btn btn-primary">Compile</button>\
+                    <button type="button" onclick="return cancel($(this), event);" class="btn btn-danger">Cancel</button>\
+                </div>\
+            </td></tr></table></div>\
+            ')
+            .appendTo($('.items'))
+    }
+    function afterLogin(r){
+        socket = io();
+        socket.on('process', processUpdate)
+        socket.on('processDone', function(r){
+            $('.processClose').fadeIn(500);
+        })
+        $('.repo').text(r.repo).attr('href', r.repo);
+        for(var i in r.branch){
+            appendItem(r.branch[i]).show()
+        }
+        if(r.process){
+          $('.processCon').show()
+          processUpdate(r.process)
+        }
+    $('#fileupload').fileupload({
+        url: '/upload',
+        dataType: 'json',
+        add: function(){
+            $('#fileupload').prop('disabled', true)
+            $.blueimp.fileupload.prototype.options.add.apply(this, arguments);
+            $('.progressbar').fadeIn(300);
+        },
+        done: function (e, data) {
+            if(data.result.error){
+                processUpdate(data.result.error);
+                $('.processClose').show();
+            }else{
+                appendItem(data.result.name).show(300);
+            }
+            $('.processCon').fadeIn(500, function(){
+                $('#fileupload').prop('disabled', false)
+                $('.progressbar').fadeOut(300, function(){
+                    $('.progressbar').css('width', '0%');
+                })
+            })
+        },
+        progressall: function (e, data) {
+            var progress = data.loaded / data.total * 100;
+            $('.progressbar').css(
+                'width',
+                progress + '%'
+            );
+        }
+    }).prop('disabled', !$.support.fileInput)
+        .parent().addClass($.support.fileInput ? undefined : 'disabled');
+        
+    }
+    $.get('/list', function(r){
+        if(r.error){
+            $('.login').removeClass('loading').find('button > .state').html('Log in');
+            working = false;
+        }else{
+            afterLogin(r)
+            $('.wrapper').fadeOut(300);
+        }
+    })
+    $('.login').on('submit', function(e) {
+      e.preventDefault();
+      if (working) return;
+      working = true;
+      var $this = $(this),
+        $state = $this.find('button > .state');
+      $this.addClass('loading');
+      $state.html('Authenticating');
+      $.post('/login', $this.serialize(), function(r){
+          if(r.error){
+            $this.addClass('fail');
+            $state.html(r.error);
+            setTimeout(function() {
+              $state.html('Log in');
+              $this.removeClass('fail loading');
+              working = false;
+            }, 2000);
+          }else{
+            $this.addClass('ok');
+            $state.html('Welcome');
+            afterLogin(r);
+            $('.wrapper').delay(1000).fadeOut(300);
+          }
+      },'json')
+    });
+});
+</script>
+<style>
+html{
+  font-size: 16pt;
+}
+body {
+  margin: 0px;
+  font-family: "Open Sans", sans-serif;
+}
+
+@keyframes spinner {
+  0% {
+    transform: rotateZ(0deg);
+  }
+  100% {
+    transform: rotateZ(359deg);
+  }
+}
+* {
+  box-sizing: border-box;
+}
+
+.wrapper {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  justify-content: center;
+  width: 100%;
+  min-height: 100%;
+  padding: 20px;
+  background: #133F61;
+}
+
+.login {
+  border-radius: 2px 2px 5px 5px;
+  padding: 10px 20px 20px 20px;
+  width: 90%;
+  max-width: 320px;
+  background: #ffffff;
+  position: relative;
+  padding-bottom: 80px;
+  box-shadow: 0px 1px 5px rgba(0, 0, 0, 0.3);
+}
+.login.loading button {
+  max-height: 100%;
+  padding-top: 50px;
+}
+.login.loading button .spinner {
+  border: 4px solid #ffffff;
+  border-top-color: rgba(255, 255, 255, 0.3);
+  opacity: 1;
+  top: 40%;
+}
+.login.ok button {
+  background-color: #8bc34a;
+}
+.login.ok button .spinner {
+  border-radius: 0;
+  border-top-color: transparent;
+  border-right-color: transparent;
+  height: 20px;
+  animation: none;
+  transform: rotateZ(-45deg);
+}
+.login.fail button {
+  background-color: #C34A4A;
+}
+.login.fail button .spinner {
+  border-color: transparent;
+  box-shadow: none;
+  height: 40px;
+  animation: none;
+  transform: rotateZ(0deg);
+}
+.login.fail button .spinner::before {
+  position: absolute;
+  top: -17px;
+  left: 4px;
+  font-style: normal;
+  opacity: 1;
+  content: "x";
+  font-size: 50px;
+  animation: none;
+}
+.login input {
+  display: block;
+  padding: 15px 10px;
+  margin-bottom: 10px;
+  width: 100%;
+  border: 1px solid #ddd;
+  transition: border-width 0.2s ease;
+  border-radius: 2px;
+}
+.login input + i.fa {
+  color: #fff;
+  font-size: 1em;
+  position: absolute;
+  margin-top: -47px;
+  opacity: 0;
+  left: 0;
+  transition: all 0.1s ease-in;
+}
+.login input:focus {
+  outline: none;
+  border-color: #2196F3;
+  border-left-width: 35px;
+}
+.login input:focus + i.fa {
+  opacity: 1;
+  left: 30px;
+  transition: all 0.25s ease-out;
+}
+.login a {
+  font-size: 0.8em;
+  color: #2196F3;
+  text-decoration: none;
+}
+.login .title {
+  color: #444;
+  font-size: 1.2em;
+  font-weight: bold;
+  margin: 10px 0 30px 0;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 20px;
+}
+.login button {
+  outline: none;
+  width: 100%;
+  height: 100%;
+  padding: 10px 10px;
+  background: #2196F3;
+  color: #fff;
+  display: block;
+  border: none;
+  margin-top: 20px;
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  max-height: 60px;
+  border: 0px solid rgba(0, 0, 0, 0.1);
+  border-radius: 0 0 2px 2px;
+  transform: rotateZ(0deg);
+  transition: all 0.1s ease-out;
+  border-bottom-width: 7px;
+}
+.login button .spinner {
+  display: block;
+  width: 40px;
+  height: 40px;
+  position: absolute;
+  border-color: transparent;
+  border-radius: 100%;
+  left: 50%;
+  top: 0;
+  opacity: 0;
+  margin-left: -20px;
+  margin-top: -20px;
+  animation: spinner 0.6s infinite linear;
+  transition: top 0.2s 0.2s ease-out, opacity 0.2s 0.2s ease-out, border-radius 0.3s ease, border-color 0.3s ease;
+  box-shadow: 0px 1px 0px rgba(0, 0, 0, 0.2);
+}
+.login button .spinner::before{
+    opacity: 0;
+    content: "x";
+    transition: opacity 0.2s ease-out;
+}
+.login:not(.loading) button:hover {
+  box-shadow: 0px 1px 3px #2196F3;
+}
+.login:not(.loading) button:focus {
+  border-bottom-width: 4px;
+}
+
+footer {
+  display: block;
+  padding-top: 50px;
+  text-align: center;
+  color: #ddd;
+  font-weight: normal;
+  text-shadow: 0px -1px 0px rgba(0, 0, 0, 0.2);
+  font-size: 0.8em;
+}
+footer a, footer a:link {
+  color: #fff;
+  text-decoration: none;
+}
+.branchs{
+    text-align:center;
+}
+.item, .upload{
+    display: block;
+    float: left;
+    text-align: center;
+    word-break: break-all;
+    height: 8rem;
+    width: 8rem;
+    background: gray;
+    color: white;
+    border-radius: 1rem;
+    margin: 0.5rem;
+    padding: 0.5rem;
+}
+.upload{
+    padding: 0;
+    font-size: 6rem;
+    line-height: 7.75rem;
+}
+.vmtb{
+    height: 100%;
+    width: 100%;
+}
+.vmtd{
+    font-size: 0.8rem;
+    color: white;
+    text-align: center;
+    vertical-align: middle;
+}
+.progressbar{
+    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+    background: #337ab7;
+    width: 0%;
+    transition: width .15s ease;
+    display: none;
+    min-width:5%;
+}
+.processCon{
+    top: 0px;
+    left: 0px;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background: rgba(0,0,0,0.5);
+    position: fixed;
+    z-index: 99;
+    display: none;
+}
+.process{
+
+    margin: 10%;
+    padding: 2rem;
+}
+.processClose{
+    margin-top: 1rem;
+    width: 100%;
+    display: none;
+}
+.repo{
+    width: 100%;
+    word-break: break-all;
+    display: block;
+    margin-top: 0.8rem;
+}
+.header{
+    display: inline-block;
+    width: 100%;
+}
+</style>
+    </head>
+    <body>
+        <div class="wrapper">
+          <form class="login loading">
+            <p class="title">Log in</p>
+            <input type="text" name="repo" placeholder="Repository Name or URL" autofocus/>
+            <input type="text" name="usr" placeholder="Username" autofocus/>
+            <i class="fa fa-user"></i>
+            <input type="password" name="pwd" placeholder="Password" />
+            <button>
+              <i class="spinner"></i>
+              <span class="state">Loading</span>
+            </button>
+          </form>
+        </div>
+        <div class="processCon">
+            <pre class="process">
+              <div class="processMsg">
+              </div>
+              <button class="processClose btn btn-primary">Close</button>
+            </pre>
+        </div>
+        <div class="content" style="margin: 1rem 3rem;">
+            <div class="nav" style="font-size: 1.5rem; margin-bottom:2rem">
+                <div class="header">
+                    DeAPK
+                    <a href="/logout" style="float: right; font-size: 1rem; line-height: 2rem; text-decoration: none">
+                        Logout
+                    </a>
+                </div>
+                <a class="repo" style="padding-left: 1rem; font-size: 0.8rem; color: gray;text-decoration: none"/></a>
+            </div>
+            <div class="branchs">
+                <span class="items"></span>
+                <div class="upload fileinput-button">
+                    <div class="progressbar"></div>
+                    +
+                    <input id="fileupload" type="file" name="apk">
+                </div>
+            </div>
+        </div>
+    </body>
+</html>

@@ -1,0 +1,26 @@
+#!/bin/bash
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(pwd)/bin/lib
+echo "Decompiling $3 ..."
+if [ -d "$1.out" ];then
+  echo "Ouptut directory exist."
+  exit 1
+fi
+mkdir "$1.out/"
+./bin/apktool d "$1" -f -o "$1.out/" -p "/tmp" | tee "$1.log"
+mv "$1.log" "$1.out/apktool.log"
+cd "$1.out/"
+echo ""
+echo "Uploading..."
+echo "Initializing git..."
+git init
+git remote add origin "$2" > /dev/null
+git checkout --orphan "$3"
+echo "Adding commit..."
+git add . > /dev/null
+git commit -m 'Initial commit' > /dev/null
+echo "Pushing to remote..."
+git push --all --force > /dev/null 2>&1
+echo "Upload ended"
+echo "Cleaning local..."
+rm "$1"
+rm -rf "$1.out"
